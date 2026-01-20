@@ -1,5 +1,21 @@
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-from aiogram.utils.keyboard import InlineKeyboardBuilder
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton
+from aiogram.utils.keyboard import InlineKeyboardBuilder, ReplyKeyboardBuilder
+
+
+def main_keyboard(is_owner: bool = False) -> ReplyKeyboardMarkup:
+    """Постійна клавіатура знизу"""
+    builder = ReplyKeyboardBuilder()
+    builder.row(
+        KeyboardButton(text="📊 Ціни"),
+        KeyboardButton(text="📝 Ордери")
+    )
+    builder.row(
+        KeyboardButton(text="➕ Створити"),
+        KeyboardButton(text="💰 Баланс")
+    )
+    if is_owner:
+        builder.row(KeyboardButton(text="⚙️ Адмін"))
+    return builder.as_markup(resize_keyboard=True)
 
 
 def main_menu(is_owner: bool = False) -> InlineKeyboardMarkup:
@@ -29,6 +45,13 @@ def confirm_order() -> InlineKeyboardMarkup:
         InlineKeyboardButton(text="✅ Створити", callback_data="confirm_order"),
         InlineKeyboardButton(text="❌ Скасувати", callback_data="cancel_order_creation")
     )
+    return builder.as_markup()
+
+
+def order_card_buttons(order_id: int) -> InlineKeyboardMarkup:
+    """Кнопки для конкретного ордера"""
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(text="❌ Скасувати", callback_data=f"cancel_order:{order_id}"))
     return builder.as_markup()
 
 
