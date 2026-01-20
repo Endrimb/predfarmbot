@@ -249,7 +249,10 @@ async def cancel_order_creation(callback: CallbackQuery, state: FSMContext):
 
 @router.callback_query(F.data == "my_orders")
 async def show_my_orders(callback: CallbackQuery, session: AsyncSession):
-    await _display_orders(callback, session)
+    try:
+    await callback.message.edit_text(text, reply_markup=orders_navigation(), parse_mode="HTML")
+except:
+    pass  # Повідомлення не змінилось
 
 
 @router.callback_query(F.data == "refresh_orders")
