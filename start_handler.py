@@ -3,7 +3,7 @@ from aiogram.filters import CommandStart
 from aiogram.types import Message, CallbackQuery
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from bot.database.models import User
+from models import User
 from bot.keyboards.inline import main_menu, back_to_menu
 from bot.services.api_client import api_client
 from bot.services.order_processor import order_processor
