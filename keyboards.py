@@ -63,6 +63,17 @@ def order_card_buttons(order_id: int, has_accounts: bool = False) -> InlineKeybo
     return builder.as_markup()
 
 
+def orders_filter_buttons() -> InlineKeyboardMarkup:
+    """Кнопки фільтрації ордерів"""
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(text="🟢 Активні", callback_data="filter_orders:active"),
+        InlineKeyboardButton(text="✅ Виконані", callback_data="filter_orders:completed")
+    )
+    builder.row(InlineKeyboardButton(text="🏠 Головне меню", callback_data="main_menu"))
+    return builder.as_markup()
+
+
 def orders_navigation() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(text="🔄 Оновити", callback_data="refresh_orders"))
