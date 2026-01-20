@@ -257,19 +257,43 @@ except:
 
 @router.callback_query(F.data == "refresh_orders")
 async def refresh_orders(callback: CallbackQuery, session: AsyncSession):
-    try:
-        await _display_orders(callback, session)
-        await callback.answer("Оновлено ✓")
-    except Exception as e:
-        await callback.answer("Оновлено ✓")
-
-
-async def _display_orders(callback: CallbackQuery, session: AsyncSession):
+    async def _display_orders(callback: CallbackQuery, session: AsyncSession):
     user_id = callback.from_user.id
     
     query = select(Order).where(Order.user_id == user_id, Order.status == "active").order_by(Order.created_at.desc())
     result = await session.execute(query)
-    orders = result.scalars().all()
+    orders = result.scalars().all()  # ← Тут має бути .all()
+    
+    if not orders:
+        await callback.message.edit_text(
+            "📝 <b>Мої ордери</b>\n\nУ вас немає активних ордерів.",
+            reply_markup=back_to_menu(), parse_mode="HTML"
+        )
+        return
+    
+    try:
+        prices = await order_processor.get_current_prices()
+    except:
+        prices = {'no_2fa': 0, '2fa': 0}
+    
+    text = f"📝 <b>Активні ордери ({len(orders)})</b>\n\n"
+    
+    for order in orders:
+        type_text = "З 2FA" if order.is_2fa else "Без 2FA"
+        current_price = prices['2fa'] if order.is_2fa else prices['no_2fa']
+        max_cost = order.target_price * order.quantity
+        status_icon = "🟢" if current_price <= order.target_price else "🔴"
+        
+        text += (
+            f"{status_icon} <b>Ордер #{order.id}</b>\n"
+            f"Тип: {type_text}\n"
+            f"Ціна: ${order.target_price:.2f} × {order.quantity} шт\n"
+            f"Макс. сума: ${max_cost:.2f}\n"
+            f"Поточна ціна: ${current_price:.2f}\n"
+            f"Створено: {order.created_at.strftime('%d.%m.%Y %H:%M')}\n\n"
+        )
+    
+    await callback.message.edit_text(text, reply_markup=orders_navigation(), parse_mode="HTML")
     
     if not orders:
         await callback.message.edit_text(
