@@ -3,9 +3,9 @@ from aiogram.filters import CommandStart
 from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from sqlalchemy import select
+from sqlalchemy import select, func as sql_func
 from sqlalchemy.ext.asyncio import AsyncSession
-from models import User, Order
+from models import User, Order, Purchase, Account
 from keyboards import main_keyboard, order_card_buttons, main_menu, order_type_selection, confirm_order, orders_navigation, back_to_menu, admin_panel
 from api_client import api_client
 from order_processor import order_processor
@@ -155,6 +155,97 @@ async def handle_balance_button(message: Message):
         await message.answer(text, parse_mode="HTML")
     except Exception as e:
         await message.answer(f"❌ <b>Помилка отримання балансу</b>\n\nДеталі: {str(e)}", parse_mode="HTML")
+
+
+@router.message(F.text == "📈 Статистика")
+async def handle_statistics_button(message: Message, session: AsyncSession):
+    """Показати статистику користувача"""
+    user_id = message.from_user.id
+    
+    # Загальна кількість куплених акаунтів
+    total_accounts_query = select(sql_func.count(Account.id)).join(Purchase).join(Order).where(Order.user_id == user_id)
+    total_accounts_result = await session.execute(total_accounts_query)
+    total_accounts = total_accounts_result.scalar() or 0
+    
+    # Загальна витрачена сума
+    total_spent_query = select(sql_func.sum(Purchase.total_price)).join(Order).where(Order.user_id == user_id)
+    total_spent_result = await session.execute(total_spent_query)
+    total_spent = total_spent_result.scalar() or 0
+    
+    # Статистика по типам акаунтів
+    # Без 2FA
+    no_2fa_count_query = select(sql_func.count(Account.id)).join(Purchase).join(Order).where(
+        Order.user_id == user_id,
+        Purchase.is_2fa == False
+    )
+    no_2fa_count_result = await session.execute(no_2fa_count_query)
+    no_2fa_count = no_2fa_count_result.scalar() or 0
+    
+    no_2fa_spent_query = select(sql_func.sum(Purchase.total_price)).join(Order).where(
+        Order.user_id == user_id,
+        Purchase.is_2fa == False
+    )
+    no_2fa_spent_result = await session.execute(no_2fa_spent_query)
+    no_2fa_spent = no_2fa_spent_result.scalar() or 0
+    
+    # З 2FA
+    with_2fa_count_query = select(sql_func.count(Account.id)).join(Purchase).join(Order).where(
+        Order.user_id == user_id,
+        Purchase.is_2fa == True
+    )
+    with_2fa_count_result = await session.execute(with_2fa_count_query)
+    with_2fa_count = with_2fa_count_result.scalar() or 0
+    
+    with_2fa_spent_query = select(sql_func.sum(Purchase.total_price)).join(Order).where(
+        Order.user_id == user_id,
+        Purchase.is_2fa == True
+    )
+    with_2fa_spent_result = await session.execute(with_2fa_spent_query)
+    with_2fa_spent = with_2fa_spent_result.scalar() or 0
+    
+    # Статистика по ордерах
+    completed_orders_query = select(sql_func.count(Order.id)).where(
+        Order.user_id == user_id,
+        Order.status == "completed"
+    )
+    completed_orders_result = await session.execute(completed_orders_query)
+    completed_orders = completed_orders_result.scalar() or 0
+    
+    active_orders_query = select(sql_func.count(Order.id)).where(
+        Order.user_id == user_id,
+        Order.status == "active"
+    )
+    active_orders_result = await session.execute(active_orders_query)
+    active_orders = active_orders_result.scalar() or 0
+    
+    cancelled_orders_query = select(sql_func.count(Order.id)).where(
+        Order.user_id == user_id,
+        Order.status == "cancelled"
+    )
+    cancelled_orders_result = await session.execute(cancelled_orders_query)
+    cancelled_orders = cancelled_orders_result.scalar() or 0
+    
+    # Середня ціна за акаунт
+    avg_price = total_spent / total_accounts if total_accounts > 0 else 0
+    
+    # Формування тексту
+    text = "📈 <b>Ваша статистика</b>\n\n"
+    
+    text += "💰 <b>Загальні дані:</b>\n"
+    text += f"• Куплено акаунтів: <b>{total_accounts}</b> шт\n"
+    text += f"• Витрачено: <b>${total_spent:.2f}</b>\n"
+    text += f"• Середня ціна: <b>${avg_price:.2f}</b>\n\n"
+    
+    text += "🔐 <b>По типам:</b>\n"
+    text += f"• Без 2FA: <b>{no_2fa_count}</b> шт (<b>${no_2fa_spent:.2f}</b>)\n"
+    text += f"• З 2FA: <b>{with_2fa_count}</b> шт (<b>${with_2fa_spent:.2f}</b>)\n\n"
+    
+    text += "📊 <b>Ордери:</b>\n"
+    text += f"• Виконано: <b>{completed_orders}</b>\n"
+    text += f"• Активних: <b>{active_orders}</b>\n"
+    text += f"• Скасовано: <b>{cancelled_orders}</b>"
+    
+    await message.answer(text, parse_mode="HTML")
 
 
 @router.message(F.text == "⚙️ Адмін")
@@ -540,35 +631,4 @@ async def process_remove_user(message: Message, state: FSMContext, session: Asyn
 
 @router.callback_query(F.data == "admin_list_users")
 async def list_users(callback: CallbackQuery, session: AsyncSession):
-    if callback.from_user.id != settings.OWNER_ID:
-        await callback.answer("Немає доступу", show_alert=True)
-        return
-    
-    query = select(User).order_by(User.created_at.desc())
-    result = await session.execute(query)
-    users = result.scalars().all()
-    
-    if not users:
-        await callback.message.edit_text(
-            "📋 <b>Список користувачів</b>\n\nКористувачів немає.",
-            reply_markup=back_to_menu(), parse_mode="HTML"
-        )
-        return
-    
-    text = f"📋 <b>Список користувачів ({len(users)})</b>\n\n"
-    
-    for user in users:
-        status = "🚫 Заблокований" if user.is_blocked else "✅ Активний"
-        owner_badge = " 👑" if user.id == settings.OWNER_ID else ""
-        username_text = f"@{user.username}" if user.username else "—"
-        name_text = user.first_name if user.first_name else "—"
-        
-        text += (
-            f"<b>ID:</b> <code>{user.id}</code>{owner_badge}\n"
-            f"<b>Ім'я:</b> {name_text}\n"
-            f"<b>Username:</b> {username_text}\n"
-            f"<b>Статус:</b> {status}\n\n"
-        )
-    
-    await callback.message.edit_text(text, reply_markup=back_to_menu(), parse_mode="HTML")
-    await callback.answer()
+    if callback.from_user.i
