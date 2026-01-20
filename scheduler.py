@@ -62,6 +62,8 @@ class BotScheduler:
             logger.error(f"Error sending notifications: {str(e)}")
     
     async def _notify_order_executed(self, order_info: dict):
+        from keyboards import order_card_buttons
+        
         message = (
             f"✅ <b>Ордер #{order_info['order_id']} виконано!</b>\n\n"
             f"Куплено: <b>{order_info['accounts_count']}</b> акаунтів\n"
@@ -72,7 +74,12 @@ class BotScheduler:
         )
         
         try:
-            await self.bot.send_message(chat_id=order_info['user_id'], text=message, parse_mode="HTML")
+            await self.bot.send_message(
+                chat_id=order_info['user_id'],
+                text=message,
+                parse_mode="HTML",
+                reply_markup=order_card_buttons(order_info['order_id'], has_accounts=True)
+            )
         except Exception as e:
             logger.error(f"Failed to notify user: {str(e)}")
     
