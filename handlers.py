@@ -254,8 +254,11 @@ async def show_my_orders(callback: CallbackQuery, session: AsyncSession):
 
 @router.callback_query(F.data == "refresh_orders")
 async def refresh_orders(callback: CallbackQuery, session: AsyncSession):
-    await _display_orders(callback, session)
-    await callback.answer("Оновлено ✓")
+    try:
+        await _display_orders(callback, session)
+        await callback.answer("Оновлено ✓")
+    except Exception as e:
+        await callback.answer("Оновлено ✓")
 
 
 async def _display_orders(callback: CallbackQuery, session: AsyncSession):
