@@ -4,15 +4,15 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from bot.database.models import Order
-from bot.keyboards.inline import (
+from models import Order
+from keyboards import (
     order_type_selection, 
     confirm_order, 
     orders_navigation,
     order_list_buttons,
     back_to_menu
 )
-from bot.services.order_processor import order_processor
+from processor import order_processor
 from datetime import datetime
 
 router = Router()

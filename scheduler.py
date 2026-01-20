@@ -2,9 +2,9 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 from datetime import datetime
 from sqlalchemy import select
-from bot.database.db import async_session_maker
-from bot.database.models import User
-from bot.services.order_processor import order_processor
+from db import async_session_maker
+from models import User
+from processor import order_processor
 from aiogram import Bot
 import logging
 
