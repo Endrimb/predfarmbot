@@ -1,7 +1,7 @@
 from datetime import datetime
 from sqlalchemy import select, and_
 from sqlalchemy.ext.asyncio import AsyncSession
-from bot.database.models import Order, Purchase, Account, PriceHistory
+from models import Order, Purchase, Account, PriceHistory
 from bot.services.api_client import api_client
 from typing import List, Dict, Any
 import logging
