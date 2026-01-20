@@ -1,6 +1,6 @@
 from aiogram import Router, F
 from aiogram.filters import CommandStart
-from aiogram.types import Message, CallbackQuery
+from aiogram.types import Message, CallbackQuery, BufferedInputFile
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from sqlalchemy import select, func as sql_func
@@ -11,6 +11,7 @@ from api_client import api_client
 from order_processor import order_processor
 from config import settings
 from datetime import datetime
+from io import BytesIO
 
 router = Router()
 
@@ -409,12 +410,16 @@ async def show_orders_list(message: Message, session: AsyncSession):
     """Показати список ордерів через текстову команду"""
     user_id = message.from_user.id
     
-    query = select(Order).where(Order.user_id == user_id, Order.status == "active").order_by(Order.created_at.desc())
+    # Показуємо і активні, і виконані ордери
+    query = select(Order).where(
+        Order.user_id == user_id,
+        Order.status.in_(["active", "completed"])
+    ).order_by(Order.created_at.desc())
     result = await session.execute(query)
     orders = result.scalars().all()
     
     if not orders:
-        await message.answer("📝 <b>Мої ордери</b>\n\nУ вас немає активних ордерів.", parse_mode="HTML")
+        await message.answer("📝 <b>Мої ордери</b>\n\nУ вас немає ордерів.", parse_mode="HTML")
         return
     
     try:
@@ -426,19 +431,32 @@ async def show_orders_list(message: Message, session: AsyncSession):
         type_text = "З 2FA" if order.is_2fa else "Без 2FA"
         current_price = prices['2fa'] if order.is_2fa else prices['no_2fa']
         max_cost = order.target_price * order.quantity
-        status_icon = "🟢" if current_price <= order.target_price else "🔴"
+        
+        if order.status == "completed":
+            status_icon = "✅"
+            status_text = "Виконано"
+        else:
+            status_icon = "🟢" if current_price <= order.target_price else "🔴"
+            status_text = "Активний"
         
         text = (
-            f"{status_icon} <b>Ордер #{order.id}</b>\n\n"
+            f"{status_icon} <b>Ордер #{order.id}</b> - {status_text}\n\n"
             f"Тип: <b>{type_text}</b>\n"
             f"Цільова ціна: <b>${order.target_price:.2f}</b>\n"
             f"Кількість: <b>{order.quantity}</b> шт\n"
             f"Макс. сума: <b>${max_cost:.2f}</b>\n\n"
-            f"Поточна ціна: <b>${current_price:.2f}</b>\n"
-            f"Створено: {order.created_at.strftime('%d.%m.%Y %H:%M')}"
         )
         
-        await message.answer(text, reply_markup=order_card_buttons(order.id), parse_mode="HTML")
+        if order.status == "completed":
+            text += f"Виконано: {order.completed_at.strftime('%d.%m.%Y %H:%M')}"
+        else:
+            text += (
+                f"Поточна ціна: <b>${current_price:.2f}</b>\n"
+                f"Створено: {order.created_at.strftime('%d.%m.%Y %H:%M')}"
+            )
+        
+        has_accounts = order.status == "completed"
+        await message.answer(text, reply_markup=order_card_buttons(order.id, has_accounts), parse_mode="HTML")
 
 
 async def _display_orders_inline(callback: CallbackQuery, session: AsyncSession):
@@ -510,6 +528,55 @@ async def cancel_order_handler(callback: CallbackQuery, session: AsyncSession):
         pass
     
     await callback.answer("✓ Ордер скасовано", show_alert=True)
+
+
+@router.callback_query(F.data.startswith("download_accounts:"))
+async def download_accounts_handler(callback: CallbackQuery, session: AsyncSession):
+    """Завантажити акаунти з виконаного ордера"""
+    order_id = int(callback.data.split(":")[1])
+    user_id = callback.from_user.id
+    
+    # Перевірити чи ордер належить користувачу
+    order_query = select(Order).where(Order.id == order_id, Order.user_id == user_id)
+    order_result = await session.execute(order_query)
+    order = order_result.scalar_one_or_none()
+    
+    if not order:
+        await callback.answer("❌ Ордер не знайдено", show_alert=True)
+        return
+    
+    if order.status != "completed":
+        await callback.answer("❌ Ордер ще не виконано", show_alert=True)
+        return
+    
+    # Отримати всі акаунти з цього ордера
+    accounts_query = select(Account).join(Purchase).where(Purchase.order_id == order_id)
+    accounts_result = await session.execute(accounts_query)
+    accounts = accounts_result.scalars().all()
+    
+    if not accounts:
+        await callback.answer("❌ Акаунти не знайдено", show_alert=True)
+        return
+    
+    # Сформувати файл у форматі: email;password;recovery_email;recovery_messages_url
+    file_content = ""
+    for account in accounts:
+        recovery_email = account.recovery_email or ""
+        recovery_url = account.recovery_email_messages_url or ""
+        file_content += f"{account.email};{account.password};{recovery_email};{recovery_url}\n"
+    
+    # Створити файл в пам'яті
+    file_bytes = file_content.encode('utf-8')
+    file = BufferedInputFile(file_bytes, filename=f"order_{order_id}_accounts.txt")
+    
+    # Відправити файл
+    await callback.message.answer_document(
+        document=file,
+        caption=f"📥 <b>Акаунти з ордера #{order_id}</b>\n\nКількість: {len(accounts)} шт",
+        parse_mode="HTML"
+    )
+    
+    await callback.answer("✓ Файл відправлено")
 
 
 # ============ ADMIN ============
