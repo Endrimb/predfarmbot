@@ -8,7 +8,7 @@ from aiogram.dispatcher.middlewares.base import BaseMiddleware
 from typing import Callable, Dict, Any, Awaitable
 from aiogram.types import TelegramObject
 
-from structure_config import settings
+from config import settings
 from database import init_db, async_session_maker
 from handlers import router
 from scheduler import BotScheduler
