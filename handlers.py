@@ -6,7 +6,7 @@ from aiogram.fsm.state import State, StatesGroup
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from models import User, Order
-from keyboards import *
+from keyboards import main_keyboard, order_card_buttons, main_menu, order_type_selection, confirm_order, orders_navigation, back_to_menu, admin_panel
 from api_client import api_client
 from order_processor import order_processor
 from config import settings
@@ -59,8 +59,8 @@ async def cmd_start(message: Message, session: AsyncSession):
     await message.answer(
         f"👋 Вітаю, <b>{message.from_user.first_name}</b>!\n\n"
         f"🤖 Це бот для автоматичної торгівлі Gmail акаунтами.\n\n"
-        f"Оберіть дію з меню:",
-        reply_markup=main_menu(is_owner=is_owner),
+        f"Використовуйте кнопки знизу для навігації:",
+        reply_markup=main_keyboard(is_owner=is_owner),
         parse_mode="HTML"
     )
 
@@ -111,6 +111,62 @@ async def show_balance(callback: CallbackQuery):
             reply_markup=back_to_menu(), parse_mode="HTML"
         )
     await callback.answer()
+
+
+# ============ TEXT BUTTON HANDLERS ============
+@router.message(F.text == "📊 Ціни")
+async def handle_prices_button(message: Message):
+    try:
+        prices = await order_processor.get_current_prices()
+        text = (
+            f"📊 <b>Поточні ціни на акаунти</b>\n\n"
+            f"Без 2FA: <b>${prices['no_2fa']:.2f}</b>\n"
+            f"З 2FA: <b>${prices['2fa']:.2f}</b>\n\n"
+            f"🕐 Оновлено: {datetime.now().strftime('%d.%m.%Y %H:%M')}"
+        )
+        await message.answer(text, parse_mode="HTML")
+    except Exception as e:
+        await message.answer(f"❌ <b>Помилка отримання цін</b>\n\nДеталі: {str(e)}", parse_mode="HTML")
+
+
+@router.message(F.text == "📝 Ордери")
+async def handle_orders_button(message: Message, session: AsyncSession):
+    await show_orders_list(message, session)
+
+
+@router.message(F.text == "➕ Створити")
+async def handle_create_button(message: Message, state: FSMContext):
+    await state.set_state(OrderCreation.waiting_for_type)
+    await message.answer(
+        "📝 <b>Створення нового ордера</b>\n\n1️⃣ Оберіть тип акаунтів:",
+        reply_markup=order_type_selection(), parse_mode="HTML"
+    )
+
+
+@router.message(F.text == "💰 Баланс")
+async def handle_balance_button(message: Message):
+    try:
+        balance = await api_client.get_balance()
+        text = (
+            f"💰 <b>Баланс API</b>\n\n"
+            f"Доступно: <b>${balance:.2f}</b>\n\n"
+            f"ℹ️ Поповнити баланс можна в дашборді:\n{settings.API_DOMAIN}"
+        )
+        await message.answer(text, parse_mode="HTML")
+    except Exception as e:
+        await message.answer(f"❌ <b>Помилка отримання балансу</b>\n\nДеталі: {str(e)}", parse_mode="HTML")
+
+
+@router.message(F.text == "⚙️ Адмін")
+async def handle_admin_button(message: Message):
+    if message.from_user.id != settings.OWNER_ID:
+        await message.answer("🚫 У вас немає доступу до адмін-панелі")
+        return
+    
+    await message.answer(
+        "⚙️ <b>Панель адміністратора</b>\n\nОберіть дію:",
+        reply_markup=admin_panel(), parse_mode="HTML"
+    )
 
 
 # ============ ORDERS ============
@@ -233,7 +289,7 @@ async def confirm_order_creation(callback: CallbackQuery, state: FSMContext, ses
         f"Ціна: <b>${data['target_price']:.2f}</b>\n"
         f"Кількість: <b>{data['quantity']}</b> шт\n\n"
         f"🔔 Ви отримаєте повідомлення про виконання.",
-        reply_markup=back_to_menu(), parse_mode="HTML"
+        parse_mode="HTML"
     )
     
     await state.clear()
@@ -243,22 +299,58 @@ async def confirm_order_creation(callback: CallbackQuery, state: FSMContext, ses
 @router.callback_query(F.data == "cancel_order_creation")
 async def cancel_order_creation(callback: CallbackQuery, state: FSMContext):
     await state.clear()
-    await callback.message.edit_text("❌ Створення скасовано.", reply_markup=back_to_menu(), parse_mode="HTML")
+    await callback.message.edit_text("❌ Створення скасовано.", parse_mode="HTML")
     await callback.answer()
 
 
 @router.callback_query(F.data == "my_orders")
 async def show_my_orders(callback: CallbackQuery, session: AsyncSession):
-    await _display_orders(callback, session)
+    await _display_orders_inline(callback, session)
 
 
 @router.callback_query(F.data == "refresh_orders")
 async def refresh_orders(callback: CallbackQuery, session: AsyncSession):
-    await _display_orders(callback, session)
+    await _display_orders_inline(callback, session)
     await callback.answer("Оновлено ✓")
 
 
-async def _display_orders(callback: CallbackQuery, session: AsyncSession):
+async def show_orders_list(message: Message, session: AsyncSession):
+    """Показати список ордерів через текстову команду"""
+    user_id = message.from_user.id
+    
+    query = select(Order).where(Order.user_id == user_id, Order.status == "active").order_by(Order.created_at.desc())
+    result = await session.execute(query)
+    orders = result.scalars().all()
+    
+    if not orders:
+        await message.answer("📝 <b>Мої ордери</b>\n\nУ вас немає активних ордерів.", parse_mode="HTML")
+        return
+    
+    try:
+        prices = await order_processor.get_current_prices()
+    except:
+        prices = {'no_2fa': 0, '2fa': 0}
+    
+    for order in orders:
+        type_text = "З 2FA" if order.is_2fa else "Без 2FA"
+        current_price = prices['2fa'] if order.is_2fa else prices['no_2fa']
+        max_cost = order.target_price * order.quantity
+        status_icon = "🟢" if current_price <= order.target_price else "🔴"
+        
+        text = (
+            f"{status_icon} <b>Ордер #{order.id}</b>\n\n"
+            f"Тип: <b>{type_text}</b>\n"
+            f"Цільова ціна: <b>${order.target_price:.2f}</b>\n"
+            f"Кількість: <b>{order.quantity}</b> шт\n"
+            f"Макс. сума: <b>${max_cost:.2f}</b>\n\n"
+            f"Поточна ціна: <b>${current_price:.2f}</b>\n"
+            f"Створено: {order.created_at.strftime('%d.%m.%Y %H:%M')}"
+        )
+        
+        await message.answer(text, reply_markup=order_card_buttons(order.id), parse_mode="HTML")
+
+
+async def _display_orders_inline(callback: CallbackQuery, session: AsyncSession):
     user_id = callback.from_user.id
     
     query = select(Order).where(Order.user_id == user_id, Order.status == "active").order_by(Order.created_at.desc())
@@ -295,6 +387,38 @@ async def _display_orders(callback: CallbackQuery, session: AsyncSession):
         )
     
     await callback.message.edit_text(text, reply_markup=orders_navigation(), parse_mode="HTML")
+
+
+@router.callback_query(F.data.startswith("cancel_order:"))
+async def cancel_order_handler(callback: CallbackQuery, session: AsyncSession):
+    """Скасувати конкретний ордер"""
+    order_id = int(callback.data.split(":")[1])
+    user_id = callback.from_user.id
+    
+    query = select(Order).where(Order.id == order_id, Order.user_id == user_id)
+    result = await session.execute(query)
+    order = result.scalar_one_or_none()
+    
+    if not order:
+        await callback.answer("❌ Ордер не знайдено", show_alert=True)
+        return
+    
+    if order.status != "active":
+        await callback.answer("❌ Цей ордер вже неактивний", show_alert=True)
+        return
+    
+    order.status = "cancelled"
+    await session.commit()
+    
+    try:
+        await callback.message.edit_text(
+            f"❌ <b>Ордер #{order_id} скасовано</b>",
+            parse_mode="HTML"
+        )
+    except:
+        pass
+    
+    await callback.answer("✓ Ордер скасовано", show_alert=True)
 
 
 # ============ ADMIN ============
@@ -343,12 +467,12 @@ async def process_add_user(message: Message, state: FSMContext, session: AsyncSe
                 await session.commit()
                 await message.answer(
                     f"✅ Користувача <code>{user_id}</code> розблоковано!",
-                    reply_markup=back_to_menu(), parse_mode="HTML"
+                    parse_mode="HTML"
                 )
             else:
                 await message.answer(
                     f"ℹ️ Користувач <code>{user_id}</code> вже має доступ.",
-                    reply_markup=back_to_menu(), parse_mode="HTML"
+                    parse_mode="HTML"
                 )
         else:
             new_user = User(id=user_id)
@@ -357,7 +481,7 @@ async def process_add_user(message: Message, state: FSMContext, session: AsyncSe
             
             await message.answer(
                 f"✅ Користувача <code>{user_id}</code> додано!",
-                reply_markup=back_to_menu(), parse_mode="HTML"
+                parse_mode="HTML"
             )
         
         await state.clear()
@@ -388,7 +512,7 @@ async def process_remove_user(message: Message, state: FSMContext, session: Asyn
         user_id = int(message.text)
         
         if user_id == settings.OWNER_ID:
-            await message.answer("❌ Не можна видалити власника!", reply_markup=back_to_menu(), parse_mode="HTML")
+            await message.answer("❌ Не можна видалити власника!", parse_mode="HTML")
             await state.clear()
             return
         
@@ -401,12 +525,12 @@ async def process_remove_user(message: Message, state: FSMContext, session: Asyn
             await session.commit()
             await message.answer(
                 f"✅ Користувача <code>{user_id}</code> видалено!",
-                reply_markup=back_to_menu(), parse_mode="HTML"
+                parse_mode="HTML"
             )
         else:
             await message.answer(
                 f"❌ Користувача не знайдено.",
-                reply_markup=back_to_menu(), parse_mode="HTML"
+                parse_mode="HTML"
             )
         
         await state.clear()
