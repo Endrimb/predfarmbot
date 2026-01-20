@@ -3,10 +3,9 @@ from sqlalchemy import BigInteger, Boolean, DateTime, Float, Integer, String, Te
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from typing import List, Optional
 
-
 class Base(DeclarativeBase):
+    """Базовий клас для всіх моделей"""
     pass
-
 
 class User(Base):
     __tablename__ = "users"
@@ -19,7 +18,6 @@ class User(Base):
     
     # Relationships
     orders: Mapped[List["Order"]] = relationship(back_populates="user", cascade="all, delete-orphan")
-
 
 class Order(Base):
     __tablename__ = "orders"
@@ -37,7 +35,6 @@ class Order(Base):
     user: Mapped["User"] = relationship(back_populates="orders")
     purchases: Mapped[List["Purchase"]] = relationship(back_populates="order", cascade="all, delete-orphan")
 
-
 class Purchase(Base):
     __tablename__ = "purchases"
     
@@ -53,7 +50,6 @@ class Purchase(Base):
     # Relationships
     order: Mapped["Order"] = relationship(back_populates="purchases")
     accounts: Mapped[List["Account"]] = relationship(back_populates="purchase", cascade="all, delete-orphan")
-
 
 class Account(Base):
     __tablename__ = "accounts"
@@ -71,7 +67,6 @@ class Account(Base):
     
     # Relationships
     purchase: Mapped["Purchase"] = relationship(back_populates="accounts")
-
 
 class PriceHistory(Base):
     __tablename__ = "price_history"

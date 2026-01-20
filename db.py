@@ -2,28 +2,23 @@ from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, Asyn
 from config import settings
 from models import Base
 
+# Отримуємо виправлений URL через метод, який ми додали в config.py
+# Це гарантує використання драйвера asyncpg замість psycopg2
+engine = create_async_engine(settings.get_db_url(), echo=False)
 
-import os
-
-# Отримуємо URL прямо з системи для надійності
-database_url = os.getenv("DATABASE_URL")
-
-if database_url and database_url.startswith("postgres://"):
-    database_url = database_url.replace("postgres://", "postgresql+asyncpg://", 1)
-elif database_url and database_url.startswith("postgresql://"):
-    database_url = database_url.replace("postgresql://", "postgresql+asyncpg://", 1)
-
-engine = create_async_engine(database_url, echo=False)
-async_session_maker = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
-
+async_session_maker = async_sessionmaker(
+    engine, 
+    class_=AsyncSession, 
+    expire_on_commit=False
+)
 
 async def init_db():
-    """Ініціалізація бази даних"""
+    """Ініціалізація бази даних (створення таблиць)"""
     async with engine.begin() as conn:
+        # Створює всі таблиці, описані в models.py, якщо їх ще немає
         await conn.run_sync(Base.metadata.create_all)
 
-
 async def get_session() -> AsyncSession:
-    """Отримати сесію бази даних"""
+    """Отримати асинхронну сесію для роботи з БД"""
     async with async_session_maker() as session:
         yield session

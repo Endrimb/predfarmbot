@@ -2,14 +2,15 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 from datetime import datetime
 from sqlalchemy import select
-from db import async_session_maker
-from models import User
-from processor import order_processor
 from aiogram import Bot
 import logging
 
-logger = logging.getLogger(__name__)
+# ВИПРАВЛЕНО: Прямі імпорти без bot.
+from db import async_session_maker
+from models import User
+from processor import order_processor
 
+logger = logging.getLogger(__name__)
 
 class BotScheduler:
     """Планувальник задач для бота"""
@@ -37,7 +38,7 @@ class BotScheduler:
                 logger.error(f"Error in order processing task: {str(e)}")
     
     async def send_price_notifications(self):
-        """Відправити сповіщення про поточні ціни всім користувачам"""
+        """Відправити сповіщення про поточні ціни всім активним користувачам"""
         logger.info("Sending price notifications...")
         
         try:
@@ -49,11 +50,14 @@ class BotScheduler:
                 result = await session.execute(query)
                 users = result.scalars().all()
                 
+                # Використовуємо звичайний datetime для відображення в повідомленні
+                timestamp = datetime.now().strftime('%d.%m.%Y %H:%M')
+                
                 message = (
                     f"📊 <b>Актуальні ціни на акаунти</b>\n\n"
                     f"Без 2FA: <b>${prices['no_2fa']:.2f}</b>\n"
                     f"З 2FA: <b>${prices['2fa']:.2f}</b>\n\n"
-                    f"🕐 Оновлено: {datetime.now().strftime('%d.%m.%Y %H:%M')}"
+                    f"🕐 Оновлено: {timestamp}"
                 )
                 
                 # Відправити всім користувачам
@@ -93,14 +97,8 @@ class BotScheduler:
             logger.error(f"Failed to notify user {order_info['user_id']}: {str(e)}")
     
     def start(self, price_check_interval: int = 5, notification_interval: int = 60):
-        """
-        Запустити планувальник
-        
-        Args:
-            price_check_interval: Інтервал перевірки цін в хвилинах
-            notification_interval: Інтервал сповіщень про ціни в хвилинах
-        """
-        # Додати задачу перевірки ордерів
+        """Запустити планувальник"""
+        # Задача перевірки ордерів
         self.scheduler.add_job(
             self.check_and_process_orders,
             trigger=IntervalTrigger(minutes=price_check_interval),
@@ -108,7 +106,7 @@ class BotScheduler:
             replace_existing=True
         )
         
-        # Додати задачу сповіщень про ціни
+        # Задача сповіщень про ціни
         self.scheduler.add_job(
             self.send_price_notifications,
             trigger=IntervalTrigger(minutes=notification_interval),
@@ -117,7 +115,7 @@ class BotScheduler:
         )
         
         self.scheduler.start()
-        logger.info(f"Scheduler started. Price check: every {price_check_interval}m, Notifications: every {notification_interval}m")
+        logger.info(f"Scheduler started. Check: {price_check_interval}m, Notify: {notification_interval}m")
     
     def shutdown(self):
         """Зупинити планувальник"""

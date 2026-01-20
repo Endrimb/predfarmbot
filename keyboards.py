@@ -1,6 +1,6 @@
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.utils.keyboard import InlineKeyboardBuilder
-
+from typing import Optional
 
 def main_menu(is_owner: bool = False) -> InlineKeyboardMarkup:
     """Головне меню"""
@@ -16,7 +16,6 @@ def main_menu(is_owner: bool = False) -> InlineKeyboardMarkup:
     
     return builder.as_markup()
 
-
 def order_type_selection() -> InlineKeyboardMarkup:
     """Вибір типу акаунтів"""
     builder = InlineKeyboardBuilder()
@@ -29,7 +28,6 @@ def order_type_selection() -> InlineKeyboardMarkup:
     
     return builder.as_markup()
 
-
 def confirm_order(order_id: Optional[int] = None) -> InlineKeyboardMarkup:
     """Підтвердження створення ордера"""
     builder = InlineKeyboardBuilder()
@@ -40,7 +38,6 @@ def confirm_order(order_id: Optional[int] = None) -> InlineKeyboardMarkup:
     )
     
     return builder.as_markup()
-
 
 def order_list_buttons(order_id: int) -> InlineKeyboardMarkup:
     """Кнопки для конкретного ордера"""
@@ -53,7 +50,6 @@ def order_list_buttons(order_id: int) -> InlineKeyboardMarkup:
     
     return builder.as_markup()
 
-
 def orders_navigation() -> InlineKeyboardMarkup:
     """Навігація по списку ордерів"""
     builder = InlineKeyboardBuilder()
@@ -63,13 +59,11 @@ def orders_navigation() -> InlineKeyboardMarkup:
     
     return builder.as_markup()
 
-
 def back_to_menu() -> InlineKeyboardMarkup:
     """Кнопка повернення в меню"""
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(text="🏠 Головне меню", callback_data="main_menu"))
     return builder.as_markup()
-
 
 def admin_panel() -> InlineKeyboardMarkup:
     """Панель адміністратора"""
@@ -82,7 +76,6 @@ def admin_panel() -> InlineKeyboardMarkup:
     
     return builder.as_markup()
 
-
 def user_action_buttons(user_id: int) -> InlineKeyboardMarkup:
     """Кнопки дій з користувачем"""
     builder = InlineKeyboardBuilder()
@@ -94,6 +87,3 @@ def user_action_buttons(user_id: int) -> InlineKeyboardMarkup:
     builder.row(InlineKeyboardButton(text="◀️ Назад", callback_data="admin_list_users"))
     
     return builder.as_markup()
-
-
-from typing import Optional

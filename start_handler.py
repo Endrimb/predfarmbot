@@ -3,14 +3,16 @@ from aiogram.filters import CommandStart
 from aiogram.types import Message, CallbackQuery
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from datetime import datetime, timezone
+
+# ВИПРАВЛЕНО: Прямі імпорти без префікса bot.
 from models import User
-from bot.keyboards.inline import main_menu, back_to_menu
-from bot.services.api_client import api_client
-from bot.services.order_processor import order_processor
+from keyboards import main_menu, back_to_menu
+from api import api_client
+from processor import order_processor
 from config import settings
 
 router = Router()
-
 
 @router.message(CommandStart())
 async def cmd_start(message: Message, session: AsyncSession):
@@ -71,7 +73,6 @@ async def cmd_start(message: Message, session: AsyncSession):
         parse_mode="HTML"
     )
 
-
 @router.callback_query(F.data == "main_menu")
 async def show_main_menu(callback: CallbackQuery, session: AsyncSession):
     """Показати головне меню"""
@@ -86,19 +87,19 @@ async def show_main_menu(callback: CallbackQuery, session: AsyncSession):
     )
     await callback.answer()
 
-
 @router.callback_query(F.data == "show_prices")
 async def show_current_prices(callback: CallbackQuery):
     """Показати поточні ціни"""
     try:
         prices = await order_processor.get_current_prices()
+        # Використовуємо локальний час для зручності відображення
+        now = datetime.now().strftime('%d.%m.%Y %H:%M')
         
-        from datetime import datetime
         text = (
             f"📊 <b>Поточні ціни на акаунти</b>\n\n"
             f"Без 2FA: <b>${prices['no_2fa']:.2f}</b>\n"
             f"З 2FA: <b>${prices['2fa']:.2f}</b>\n\n"
-            f"🕐 Оновлено: {datetime.now().strftime('%d.%m.%Y %H:%M')}"
+            f"🕐 Оновлено: {now}"
         )
         
         await callback.message.edit_text(
@@ -117,7 +118,6 @@ async def show_current_prices(callback: CallbackQuery):
     
     await callback.answer()
 
-
 @router.callback_query(F.data == "show_balance")
 async def show_balance(callback: CallbackQuery):
     """Показати баланс API"""
@@ -128,7 +128,7 @@ async def show_balance(callback: CallbackQuery):
             f"💰 <b>Баланс API</b>\n\n"
             f"Доступно: <b>${balance:.2f}</b>\n\n"
             f"ℹ️ Поповнити баланс можна в дашборді:\n"
-            f"{settings.API_DOMAIN}"
+            f"<code>{settings.API_DOMAIN}</code>"
         )
         
         await callback.message.edit_text(

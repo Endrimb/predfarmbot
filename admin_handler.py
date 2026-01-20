@@ -1,21 +1,21 @@
-from aiogram import Router, F
+from aiogram import Router, F, types
 from aiogram.types import CallbackQuery, Message
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from bot.database.models import User
-from bot.keyboards.inline import admin_panel, back_to_menu, user_action_buttons
+
+# ВИПРАВЛЕНО: Прямі імпорти без bot.
+from models import User
+from keyboards import admin_panel, back_to_menu
 from config import settings
 
 router = Router()
-
 
 class AdminStates(StatesGroup):
     """Стани для адміністративних дій"""
     waiting_for_user_id = State()
     waiting_for_user_id_to_remove = State()
-
 
 @router.callback_query(F.data == "admin_panel")
 async def show_admin_panel(callback: CallbackQuery):
@@ -31,7 +31,6 @@ async def show_admin_panel(callback: CallbackQuery):
         parse_mode="HTML"
     )
     await callback.answer()
-
 
 @router.callback_query(F.data == "admin_add_user")
 async def start_add_user(callback: CallbackQuery, state: FSMContext):
@@ -49,7 +48,6 @@ async def start_add_user(callback: CallbackQuery, state: FSMContext):
         parse_mode="HTML"
     )
     await callback.answer()
-
 
 @router.message(AdminStates.waiting_for_user_id)
 async def process_add_user(message: Message, state: FSMContext, session: AsyncSession):
@@ -105,7 +103,6 @@ async def process_add_user(message: Message, state: FSMContext, session: AsyncSe
             "❌ Невірний формат ID. Введіть числовий ID користувача:"
         )
 
-
 @router.callback_query(F.data == "admin_remove_user")
 async def start_remove_user(callback: CallbackQuery, state: FSMContext):
     """Початок видалення користувача"""
@@ -121,7 +118,6 @@ async def start_remove_user(callback: CallbackQuery, state: FSMContext):
         parse_mode="HTML"
     )
     await callback.answer()
-
 
 @router.message(AdminStates.waiting_for_user_id_to_remove)
 async def process_remove_user(message: Message, state: FSMContext, session: AsyncSession):
@@ -169,7 +165,6 @@ async def process_remove_user(message: Message, state: FSMContext, session: Asyn
             "❌ Невірний формат ID. Введіть числовий ID користувача:"
         )
 
-
 @router.callback_query(F.data == "admin_list_users")
 async def list_users(callback: CallbackQuery, session: AsyncSession):
     """Показати список користувачів"""
@@ -178,7 +173,7 @@ async def list_users(callback: CallbackQuery, session: AsyncSession):
         return
     
     # Отримати всіх користувачів
-    query = select(User).order_by(User.created_at.desc())
+    query = select(User).order_by(User.id.desc())
     result = await session.execute(query)
     users = result.scalars().all()
     
@@ -197,14 +192,11 @@ async def list_users(callback: CallbackQuery, session: AsyncSession):
         status = "🚫 Заблокований" if user.is_blocked else "✅ Активний"
         owner_badge = " 👑" if user.id == settings.OWNER_ID else ""
         username_text = f"@{user.username}" if user.username else "—"
-        name_text = user.first_name if user.first_name else "—"
         
         text += (
             f"<b>ID:</b> <code>{user.id}</code>{owner_badge}\n"
-            f"<b>Ім'я:</b> {name_text}\n"
             f"<b>Username:</b> {username_text}\n"
-            f"<b>Статус:</b> {status}\n"
-            f"<b>Доданий:</b> {user.created_at.strftime('%d.%m.%Y')}\n\n"
+            f"<b>Статус:</b> {status}\n\n"
         )
     
     await callback.message.edit_text(
@@ -213,28 +205,3 @@ async def list_users(callback: CallbackQuery, session: AsyncSession):
         parse_mode="HTML"
     )
     await callback.answer()
-
-
-@router.callback_query(F.data.startswith("block_user:"))
-async def block_user(callback: CallbackQuery, session: AsyncSession):
-    """Заблокувати користувача"""
-    if callback.from_user.id != settings.OWNER_ID:
-        await callback.answer("У вас немає доступу до адмін-панелі", show_alert=True)
-        return
-    
-    user_id = int(callback.data.split(":")[1])
-    
-    if user_id == settings.OWNER_ID:
-        await callback.answer("Не можна заблокувати власника!", show_alert=True)
-        return
-    
-    query = select(User).where(User.id == user_id)
-    result = await session.execute(query)
-    user = result.scalar_one_or_none()
-    
-    if user:
-        user.is_blocked = True
-        await session.commit()
-        await callback.answer("Користувача заблоковано ✓", show_alert=True)
-    else:
-        await callback.answer("Користувача не знайдено", show_alert=True)
