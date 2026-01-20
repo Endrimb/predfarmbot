@@ -6,7 +6,7 @@ from aiogram.fsm.state import State, StatesGroup
 from sqlalchemy import select, func as sql_func
 from sqlalchemy.ext.asyncio import AsyncSession
 from models import User, Order, Purchase, Account
-from keyboards import main_keyboard, order_card_buttons, main_menu, order_type_selection, confirm_order, orders_navigation, back_to_menu, admin_panel
+from keyboards import main_keyboard, order_card_buttons, main_menu, order_type_selection, confirm_order, orders_navigation, orders_filter_buttons, back_to_menu, admin_panel
 from api_client import api_client
 from order_processor import order_processor
 from config import settings
@@ -132,7 +132,82 @@ async def handle_prices_button(message: Message):
 
 @router.message(F.text == "📝 Ордери")
 async def handle_orders_button(message: Message, session: AsyncSession):
-    await show_orders_list(message, session)
+    """Показати меню вибору типу ордерів"""
+    await message.answer(
+        "📝 <b>Мої ордери</b>\n\nОберіть тип ордерів:",
+        reply_markup=orders_filter_buttons(),
+        parse_mode="HTML"
+    )
+
+
+@router.callback_query(F.data.startswith("filter_orders:"))
+async def filter_orders_handler(callback: CallbackQuery, session: AsyncSession):
+    """Фільтрація ордерів за статусом"""
+    filter_type = callback.data.split(":")[1]
+    user_id = callback.from_user.id
+    
+    # Визначити статус для фільтрації
+    if filter_type == "active":
+        status = "active"
+        title = "🟢 Активні ордери"
+    else:  # completed
+        status = "completed"
+        title = "✅ Виконані ордери"
+    
+    # Отримати ордери
+    query = select(Order).where(
+        Order.user_id == user_id,
+        Order.status == status
+    ).order_by(Order.created_at.desc())
+    result = await session.execute(query)
+    orders = result.scalars().all()
+    
+    if not orders:
+        await callback.message.edit_text(
+            f"{title}\n\nНемає ордерів.",
+            reply_markup=orders_filter_buttons(),
+            parse_mode="HTML"
+        )
+        await callback.answer()
+        return
+    
+    # Отримати поточні ціни
+    try:
+        prices = await order_processor.get_current_prices()
+    except:
+        prices = {'no_2fa': 0, '2fa': 0}
+    
+    text = f"{title} ({len(orders)})\n\n"
+    
+    for order in orders:
+        type_text = "З 2FA" if order.is_2fa else "Без 2FA"
+        max_cost = order.target_price * order.quantity
+        
+        if status == "active":
+            current_price = prices['2fa'] if order.is_2fa else prices['no_2fa']
+            status_icon = "🟢" if current_price <= order.target_price else "🔴"
+            
+            text += (
+                f"{status_icon} <b>Ордер #{order.id}</b>\n"
+                f"Тип: {type_text}\n"
+                f"Ціна: ${order.target_price:.2f} × {order.quantity} шт\n"
+                f"Поточна ціна: ${current_price:.2f}\n"
+                f"Створено: {order.created_at.strftime('%d.%m.%Y %H:%M')}\n\n"
+            )
+        else:  # completed
+            text += (
+                f"✅ <b>Ордер #{order.id}</b>\n"
+                f"Тип: {type_text}\n"
+                f"Ціна: ${order.target_price:.2f} × {order.quantity} шт\n"
+                f"Виконано: {order.completed_at.strftime('%d.%m.%Y %H:%M')}\n\n"
+            )
+    
+    await callback.message.edit_text(
+        text,
+        reply_markup=orders_filter_buttons(),
+        parse_mode="HTML"
+    )
+    await callback.answer()
 
 
 @router.message(F.text == "➕ Створити")
@@ -404,6 +479,58 @@ async def show_my_orders(callback: CallbackQuery, session: AsyncSession):
 async def refresh_orders(callback: CallbackQuery, session: AsyncSession):
     await _display_orders_inline(callback, session)
     await callback.answer("Оновлено ✓")
+
+
+@router.callback_query(F.data.startswith("show_order_details:"))
+async def show_order_details_handler(callback: CallbackQuery, session: AsyncSession):
+    """Показати деталі конкретного ордера"""
+    order_id = int(callback.data.split(":")[1])
+    user_id = callback.from_user.id
+    
+    query = select(Order).where(Order.id == order_id, Order.user_id == user_id)
+    result = await session.execute(query)
+    order = result.scalar_one_or_none()
+    
+    if not order:
+        await callback.answer("❌ Ордер не знайдено", show_alert=True)
+        return
+    
+    type_text = "З 2FA" if order.is_2fa else "Без 2FA"
+    max_cost = order.target_price * order.quantity
+    
+    if order.status == "active":
+        try:
+            prices = await order_processor.get_current_prices()
+            current_price = prices['2fa'] if order.is_2fa else prices['no_2fa']
+        except:
+            current_price = 0
+        
+        status_icon = "🟢" if current_price <= order.target_price else "🔴"
+        
+        text = (
+            f"{status_icon} <b>Ордер #{order.id}</b> - Активний\n\n"
+            f"Тип: <b>{type_text}</b>\n"
+            f"Цільова ціна: <b>${order.target_price:.2f}</b>\n"
+            f"Кількість: <b>{order.quantity}</b> шт\n"
+            f"Макс. сума: <b>${max_cost:.2f}</b>\n\n"
+            f"Поточна ціна: <b>${current_price:.2f}</b>\n"
+            f"Створено: {order.created_at.strftime('%d.%m.%Y %H:%M')}"
+        )
+        
+        await callback.message.edit_text(text, reply_markup=order_card_buttons(order.id, False), parse_mode="HTML")
+    else:  # completed
+        text = (
+            f"✅ <b>Ордер #{order.id}</b> - Виконано\n\n"
+            f"Тип: <b>{type_text}</b>\n"
+            f"Цільова ціна: <b>${order.target_price:.2f}</b>\n"
+            f"Кількість: <b>{order.quantity}</b> шт\n"
+            f"Загальна сума: <b>${max_cost:.2f}</b>\n\n"
+            f"Виконано: {order.completed_at.strftime('%d.%m.%Y %H:%M')}"
+        )
+        
+        await callback.message.edit_text(text, reply_markup=order_card_buttons(order.id, True), parse_mode="HTML")
+    
+    await callback.answer()
 
 
 async def show_orders_list(message: Message, session: AsyncSession):
