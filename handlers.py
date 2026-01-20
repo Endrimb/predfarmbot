@@ -171,14 +171,16 @@ async def filter_orders_handler(callback: CallbackQuery, session: AsyncSession):
         await callback.answer()
         return
     
+    # Видалити попереднє повідомлення
+    await callback.message.delete()
+    
     # Отримати поточні ціни
     try:
         prices = await order_processor.get_current_prices()
     except:
         prices = {'no_2fa': 0, '2fa': 0}
     
-    text = f"{title} ({len(orders)})\n\n"
-    
+    # Відправити кожен ордер окремим повідомленням
     for order in orders:
         type_text = "З 2FA" if order.is_2fa else "Без 2FA"
         max_cost = order.target_price * order.quantity
@@ -187,26 +189,37 @@ async def filter_orders_handler(callback: CallbackQuery, session: AsyncSession):
             current_price = prices['2fa'] if order.is_2fa else prices['no_2fa']
             status_icon = "🟢" if current_price <= order.target_price else "🔴"
             
-            text += (
-                f"{status_icon} <b>Ордер #{order.id}</b>\n"
-                f"Тип: {type_text}\n"
-                f"Ціна: ${order.target_price:.2f} × {order.quantity} шт\n"
-                f"Поточна ціна: ${current_price:.2f}\n"
-                f"Створено: {order.created_at.strftime('%d.%m.%Y %H:%M')}\n\n"
+            text = (
+                f"{status_icon} <b>Ордер #{order.id}</b> - Активний\n\n"
+                f"Тип: <b>{type_text}</b>\n"
+                f"Цільова ціна: <b>${order.target_price:.2f}</b>\n"
+                f"Кількість: <b>{order.quantity}</b> шт\n"
+                f"Макс. сума: <b>${max_cost:.2f}</b>\n\n"
+                f"Поточна ціна: <b>${current_price:.2f}</b>\n"
+                f"Створено: {order.created_at.strftime('%d.%m.%Y %H:%M')}"
+            )
+            
+            await callback.message.answer(
+                text,
+                reply_markup=order_card_buttons(order.id, has_accounts=False),
+                parse_mode="HTML"
             )
         else:  # completed
-            text += (
-                f"✅ <b>Ордер #{order.id}</b>\n"
-                f"Тип: {type_text}\n"
-                f"Ціна: ${order.target_price:.2f} × {order.quantity} шт\n"
-                f"Виконано: {order.completed_at.strftime('%d.%m.%Y %H:%M')}\n\n"
+            text = (
+                f"✅ <b>Ордер #{order.id}</b> - Виконано\n\n"
+                f"Тип: <b>{type_text}</b>\n"
+                f"Куплено: <b>{order.quantity}</b> шт\n"
+                f"Ціна: <b>${order.target_price:.2f}</b> за шт\n"
+                f"Загальна сума: <b>${max_cost:.2f}</b>\n\n"
+                f"Виконано: {order.completed_at.strftime('%d.%m.%Y %H:%M')}"
+            )
+            
+            await callback.message.answer(
+                text,
+                reply_markup=order_card_buttons(order.id, has_accounts=True),
+                parse_mode="HTML"
             )
     
-    await callback.message.edit_text(
-        text,
-        reply_markup=orders_filter_buttons(),
-        parse_mode="HTML"
-    )
     await callback.answer()
 
 
