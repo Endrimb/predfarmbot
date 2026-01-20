@@ -51,10 +51,15 @@ def confirm_order() -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-def order_card_buttons(order_id: int) -> InlineKeyboardMarkup:
+def order_card_buttons(order_id: int, has_accounts: bool = False) -> InlineKeyboardMarkup:
     """Кнопки для конкретного ордера"""
     builder = InlineKeyboardBuilder()
-    builder.row(InlineKeyboardButton(text="❌ Скасувати", callback_data=f"cancel_order:{order_id}"))
+    
+    if has_accounts:
+        builder.row(InlineKeyboardButton(text="📥 Завантажити акаунти", callback_data=f"download_accounts:{order_id}"))
+    else:
+        builder.row(InlineKeyboardButton(text="❌ Скасувати", callback_data=f"cancel_order:{order_id}"))
+    
     return builder.as_markup()
 
 
