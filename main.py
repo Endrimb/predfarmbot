@@ -6,9 +6,14 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 
 from config import settings
-from bot.database.db import init_db, async_session_maker
-from bot.handlers import start, orders, admin
-from bot.scheduler.tasks import BotScheduler
+# Прибираємо "bot.database." -> стає "db"
+from db import init_db, async_session_maker 
+# Прибираємо "bot.handlers" -> стає просто назва файлу
+import start_handler as start 
+import orders_handler as orders 
+import admin_handler as admin 
+# Прибираємо "bot.scheduler.tasks" -> стає "scheduler"
+from scheduler import BotScheduler
 
 # Налаштування логування
 logging.basicConfig(
