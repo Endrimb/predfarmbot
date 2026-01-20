@@ -631,4 +631,35 @@ async def process_remove_user(message: Message, state: FSMContext, session: Asyn
 
 @router.callback_query(F.data == "admin_list_users")
 async def list_users(callback: CallbackQuery, session: AsyncSession):
-    if callback.from_user.i
+    if callback.from_user.id != settings.OWNER_ID:
+        await callback.answer("Немає доступу", show_alert=True)
+        return
+    
+    query = select(User).order_by(User.created_at.desc())
+    result = await session.execute(query)
+    users = result.scalars().all()
+    
+    if not users:
+        await callback.message.edit_text(
+            "📋 <b>Список користувачів</b>\n\nКористувачів немає.",
+            reply_markup=back_to_menu(), parse_mode="HTML"
+        )
+        return
+    
+    text = f"📋 <b>Список користувачів ({len(users)})</b>\n\n"
+    
+    for user in users:
+        status = "🚫 Заблокований" if user.is_blocked else "✅ Активний"
+        owner_badge = " 👑" if user.id == settings.OWNER_ID else ""
+        username_text = f"@{user.username}" if user.username else "—"
+        name_text = user.first_name if user.first_name else "—"
+        
+        text += (
+            f"<b>ID:</b> <code>{user.id}</code>{owner_badge}\n"
+            f"<b>Ім'я:</b> {name_text}\n"
+            f"<b>Username:</b> {username_text}\n"
+            f"<b>Статус:</b> {status}\n\n"
+        )
+    
+    await callback.message.edit_text(text, reply_markup=back_to_menu(), parse_mode="HTML")
+    await callback.answer()
