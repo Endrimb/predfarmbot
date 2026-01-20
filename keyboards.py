@@ -13,6 +13,9 @@ def main_keyboard(is_owner: bool = False) -> ReplyKeyboardMarkup:
         KeyboardButton(text="➕ Створити"),
         KeyboardButton(text="💰 Баланс")
     )
+    builder.row(
+        KeyboardButton(text="📈 Статистика")
+    )
     if is_owner:
         builder.row(KeyboardButton(text="⚙️ Адмін"))
     return builder.as_markup(resize_keyboard=True)
